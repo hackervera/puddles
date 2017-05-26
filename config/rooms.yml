@@ -1,0 +1,43 @@
+rooms:
+  - description: The starting room
+    name: starting_room
+    exit_rooms: 
+    - direction: north
+      name: barn
+    contents:
+    - name: monster
+      description: A test monster
+      display_name: test monster
+      inventory: []
+    - name: coin
+      description: A shiny coin
+      display_name: a gold coin
+      durability: 23
+    - name: donp
+      display_name: donp the merchant
+      description: A humble merchant
+      wares:
+      - name: clock
+        description: A dusty clock
+        display_name: an old clock
+        durability: 12
+  - description: This is an old barn used for storing stuff
+    name: barn
+    exit_rooms:
+    - direction: south
+      name: starting_room
+    - direction: west
+      name: cubby
+    contents: []
+  - description: You have discovered a little cubby hole
+    name: cubby
+    exit_rooms:
+    - direction: east
+      name: barn
+    contents:
+    - name: mouse
+      display_name: a tiny mouse
+      inventory: []
+      description: Beware, this mouse looks disease infested
+      alive: true
+    

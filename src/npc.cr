@@ -1,6 +1,13 @@
-require "./monster"
+require "./lifeform"
 require "./mercantile"
 
-class NPC < Monster
-  include Mercantile
+class NPC
+  include Lifeform
+  YAML.mapping(
+    wares: Array(Item),
+    name: String,
+    description: String,
+    display_name: String,
+  )
+
 end

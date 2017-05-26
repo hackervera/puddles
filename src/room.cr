@@ -1,33 +1,52 @@
-class Room
-  property :contents
-  @description : String
-  @contents : Array(Item | Lifeform)
+require "yaml"
+require "./item"
 
-  def initialize(@description, @contents)
+class Exit
+  YAML.mapping(
+    name: String,
+    direction: String
+  )
+end
+
+class Room
+  def initialize
+    @description = ""
+    @name = ""
+    @exit_rooms = [] of Exit
+    @contents = [] of Item | NPC | Player | Monster 
   end
 
+  YAML.mapping(
+    description: String,
+    name: String,
+    exit_rooms: Array(Exit),
+    contents: Array(Monster | Player | Item | NPC)
+  )
+  property :contents
+
+  # @contents : Array(Item | Lifeform)
+
+  # def initialize(@description, @contents, @name, @exit_rooms)
+
+  # end
+
   def display_contents
-    @description + @contents.map(&.to_s).join
+    @description + "\n" + @contents.map(&.to_s).join +
+      "Exits: " + exit_rooms.map(&.direction).join(", ") + "\n"
   end
 
   def find(name)
-    p name
     thing = @contents.find do |thing|
-      p thing.name
       thing.name == name
     end
     raise ThingNotFound.new if thing.nil?
     thing
   end
 
-  def broadcast(msg, player)
+  def broadcast(msg)
     contents.each do |thing|
-      if thing.class == Player && thing != player
-        begin
-          thing.as(Player).socket << msg
-        rescue Errno
-          # Client no longer active
-        end
+      if thing.class == Player
+        thing.as(Player).socket.as(TCPSocket) << "[room broadcast] #{msg}\n"
       end
     end
   end

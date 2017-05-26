@@ -10,5 +10,4 @@ module Magic
     ensure_magic
     "You cast #{spellname}\n"
   end
-  
 end

@@ -18,3 +18,6 @@ end
 
 class NotMagicUser < Exception
 end
+
+class InventoryEmpty < Exception
+end

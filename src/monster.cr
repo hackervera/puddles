@@ -1,13 +1,17 @@
-class Monster < Lifeform
-  def initialize(@name, @description, @inventory = [] of Item)
-    @alive = true
+require "./lifeform"
+
+class Monster
+  YAML.mapping(
+    name: String,
+    description: String,
+    inventory: Array(Item),
+    display_name: String,
+  )
+  include Lifeform
+
+  def initialize(@name, @description, @inventory = [] of Item, display_name = "")
+    @display_name = display_name || @name
   end
 
-  def to_s
-    if @alive
-      "A #{@name.colorize(:red)} is here minding its own business\n"
-    else
-      "The corpse of a dead #{@name} is rotting here\n"
-    end
-  end
+
 end

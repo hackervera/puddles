@@ -11,3 +11,8 @@ targets:
 crystal: 0.22.0
 
 license: MIT
+
+dependencies:
+  toml:
+    github: manastech/crystal-toml
+    branch: master

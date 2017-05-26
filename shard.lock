@@ -1,0 +1,6 @@
+version: 1.0
+shards:
+  toml:
+    github: manastech/crystal-toml
+    commit: 1ff4ad9ff3cdfaa97e17b69d6d86ab608084c39f
+

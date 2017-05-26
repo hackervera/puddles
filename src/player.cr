@@ -1,19 +1,42 @@
-require "./lifeform"
 require "./magic"
+require "./yaml"
+require "./lifeform"
 
-class Player < Lifeform
+class Player
+  YAML.mapping(
+    name: String,
+    description: String,
+    inventory: Array(Item),
+    display_name: String,
+    alive: Bool,
+    room: Room
+  )
   include Magic
-  @socket : TCPSocket
-  @room : Room
-  getter :room, :socket
+  include Lifeform
+  @socket : TCPSocket | Nil
+  property :name, :inventory, :room, :socket
+
+  def move(direction, rooms)
+    room.contents.delete(self)
+    exit = room.exit_rooms.find do |exit|
+      exit.direction == direction.to_s
+    end
+    new_room = rooms.find do |room|
+      room.name == exit.as(Exit).name
+    end
+    @room = new_room.as(Room)
+    @room.contents << self
+    "You move to the next room\n" +
+      room.display_contents
+  end
 
   def initialize(@socket)
-    @logged_in = :false
+    @room = Room.new
+    @inventory = [] of Item
+    @display_name = ""
     @alive = true
-    @inventory = [Item.new("card", "A magic playing card\n")]
     @name = "placeholder"
     @description = "placeholder"
-    @room = Rooms.first
   end
 
   def login(name, password)
@@ -25,22 +48,26 @@ class Player < Lifeform
   def get(thing_name)
     thing = room.find(thing_name)
     raise NotAnItem.new if !thing.is_a? Item
-    @inventory << thing
+    @inventory.as(Array(Item)) << thing
     room.contents.delete(thing)
   end
 
   def get_from_pack(thing_name)
-    thing = @inventory.find do |item|
+    thing = @inventory.as(Array(Item)).find do |item|
       item.name == thing_name
     end.as(Item)
-    @inventory.delete(thing)
+    @inventory.as(Array(Item)).delete(thing)
     room.contents << thing
   end
 
   def loot(thing_name)
-    thing = room.find(thing_name)
+    thing = room.find(thing_name).as(Monster|Item)
     raise NotDeadYet.new if thing.is_a? Lifeform && thing.as(Lifeform).alive
-    inv = @inventory.as(Array(Item))
+    begin
+      inv = @inventory.as(Array(Item))
+    rescue TypeCastError
+      raise InventoryEmpty.new
+    end
     goods = thing.inventory.as(Array(Item))
     raise InvalidLootTarget.new if goods.empty?
     inv += goods
@@ -58,14 +85,11 @@ class Player < Lifeform
   rescue ThingNotFound
     "You can loot something that isn't here!\n"
   rescue InvalidLootTarget
-    "#{thing.as(Thing).name} has nothing for you to loot\n"
+    "#{thing.as(Lifeform | Item).name} has nothing for you to loot\n"
   end
 
-  def to_s
-    if @alive
-      "A player named #{@name.colorize(:red)} is here minding their own business\n"
-    else
-      "The corpse of a dead player named #{@name.colorize(:red)} is rotting here\n"
-    end
+
+  def display_inventory
+    @inventory.as(Array(Item)).map { |i| i.name + "\n" }.join
   end
 end
