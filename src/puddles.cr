@@ -1,178 +1,53 @@
 require "socket"
 require "colorize"
-
-class Thing
-  @inventory : Array(Item)
-  property :inventory, :name, :description
-
-    getter :name, :description
-  @name : String 
-  @description : String
-
-  def initialize(@name, @description)
-    @inventory = [] of Item
-  end
-end
+require "./player"
+require "./room"
+require "./exceptions"
+require "./npc"
 
 class ClientManagerClass
   property :clients
   @clients : Array(TCPSocket)
+  @players : Hash(TCPSocket, Player)
+
   def initialize(@clients)
-  end
-end
-
-class Lifeform < Thing
-  getter :alive
-  def attack(player)
-    if @alive
-      @alive = false
-      "Awww... you killed the poor #{name}\n"
-    else
-      "The #{name} is already dead, give it a rest, man.\n"
-    end
+    @players = Hash(TCPSocket, Player).new
   end
 
-  def display_inventory
-    @inventory.as(Array(Item)).map { |i| i.name + "\n" }.join
+  def remove(client)
+    @clients.delete(client)
+  end
+
+  def find_player(client)
+    @players[client]
+  end
+
+  def add_player(player, client)
+    @players[client] = player
   end
 end
 
 class Item < Thing
-
-
   def to_s
     "A #{@name} is lying on the ground here\n"
   end
-
-
 end
 
-class Monster < Lifeform
-
-  def initialize(@name, @description, @inventory = [] of Item)
-    @alive = true
-  end
-
-  def to_s
-    if @alive
-      "A #{@name.colorize(:red)} is here minding its own business\n"
-    else
-      "The corpse of a dead #{@name} is rotting here\n"
-    end
-  end
-end
+Donp = NPC.new("don", "This is donpdonp the merchant")
+Donp.create_store([Item.new("clock", "An old dusty clock")])
 
 Rooms = [
   Room.new(
     description: "You are in the starting room. Nothing much is here yet.\n",
     contents: [
+      Donp,
       Monster.new("bunny", "A fluffy bunny\n", [Item.new("foot", "A lucky rabbit's foot\n")]),
       Item.new("coin", "A shiny gold coin\n"),
     ]
   ),
 ]
 
-class Room
-  property :contents
-  @description : String
-  @contents : Array(Item | Lifeform)
-
-  def initialize(@description, @contents)
-  end
-
-  def display_contents
-    @description + @contents.map(&.to_s).join
-  end
-
-  def find(name)
-    p name
-    thing = @contents.find do |thing|
-      p thing.name
-      thing.name == name
-    end
-    raise ThingNotFound.new if thing.nil?
-    thing
-  end
-
-  def broadcast(msg, player)
-    contents.each do |thing|
-      if thing.class == Player && thing != player
-        thing.as(Player).socket << msg
-      end
-    end
-  end
-end
-
-class Player < Lifeform
-  @socket : TCPSocket
-  @room : Room
-  getter :room, :socket
-
-  def initialize(@socket)
-    @logged_in = :false
-    @alive = true
-    @inventory = [Item.new("card", "A magic playing card\n")]
-    @name = "placeholder"
-    @description = "placeholder"
-    @room = Rooms.first
-  end
-
-  def login(name, password)
-    @logged_in = true
-    @name = name
-    @room.contents << self
-  end
-
-  def loot(thing_name)
-    thing = room.find(thing_name)
-    raise NotDeadYet.new if thing.is_a? Lifeform && thing.as(Lifeform).alive
-    inv = @inventory.as(Array(Item))
-    goods = thing.inventory.as(Array(Item))
-    raise InvalidLootTarget.new if goods.empty?
-    inv += goods
-    @inventory = inv
-    thing.inventory = [] of Item
-    goods_display = goods.map(&.name).join(",")
-    case thing
-    when  Lifeform
-      "You stole #{goods_display} from the defenseless corpse of #{thing.name}\n"
-    when  Item
-      "You stole #{goods_display} from #{thing.name}\n"
-    end
-
-  rescue NotDeadYet
-    "You have to kill them before you can loot their corpse!\n"
-  rescue ThingNotFound
-    "You can loot something that isn't here!\n"
-  rescue InvalidLootTarget
-    "#{thing.as(Thing).name} has nothing for you to loot\n"
-  end
-
-  def to_s
-    if @alive
-      "A player named #{@name.colorize(:red)} is here minding their own business\n"
-    else
-      "The corpse of a dead player named #{@name.colorize(:red)} is rotting here\n"
-    end
-  end
-end
-
-class InvalidLootTarget < Exception
-end
-
-class BadAuth < Exception
-end
-
-class ThingNotFound < Exception
-end
-
-class NotDeadYet < Exception
-end
-
-class InvalidLootTarget < Exception
-end
-
-server = TCPServer.new("localhost", 1234)
+server = TCPServer.new("0.0.0.0", 1234)
 ClientManager = ClientManagerClass.new([] of TCPSocket)
 
 def parse(player, client)
@@ -210,9 +85,59 @@ def parse(player, client)
     p "#{player} inv is #{player.inventory}"
     "Your pack contains: \n" +
       player.display_inventory +
-      "Use `get THING from pack` to remove item\n"
+      "Use `drop ITEM` to remove ITEM\n"
   when /^loot (.*)/
     player.loot($1)
+  when "fuzz"
+    raise Exception.new
+  when "commands"
+    <<-COMMANDS
+    l - look at current room
+    l NAME - look at thing named NAME
+    attack NAME - attack thing named NAME
+    loot NAME - loot thing named NAME
+    say MESSAGE - broadcast MESSAGE to your current location
+    get ITEM - put ITEM in your pack
+    drop ITEM - drop ITEM on the ground
+    list MERCHANT - list items for sale from MERCHANT
+    buy ITEM MERCHANT - buy ITEM from MERCHANT
+    COMMANDS
+  when /drop (.*)/
+    begin
+      player.get_from_pack($1)
+      "You drop #{$1} onto the ground from your pack\n"
+    rescue TypeCastError
+      "That item isn't in your pack!\n"
+    end
+  when /get (.*)/
+    begin
+      player.get($1)
+      player.room.broadcast("#{player.name} grabs #{$1} from room.", player)
+      "You grab #{$1} from room\n"
+    rescue NotAnItem
+      "That thing is not an item!\n"
+    rescue ThingNotFound
+      "That thing isn't even in this room!\n"
+    end
+  when /list (.*)/
+    wares = player.room.find($1).as(NPC).wares.map(&.name).join("\n")
+    "These are the items available:\n#{wares}\n"
+  when /buy (.*?) (.*)/
+    item =
+      wares = player.room.find($2).as(NPC).wares
+    item = wares.find do |item|
+      item.name == $1
+    end
+    wares.delete(item)
+    player.inventory << item.as(Item)
+    "#{$1} added to your inventory\n"
+  when /cast (.*)/
+    begin
+      #player.can_magic = true
+      player.cast $1
+    rescue NotMagicUser
+      "You are not a magic user\n"
+    end
   else
     "I'm not sure I understood that command\n"
   end
@@ -223,29 +148,39 @@ def login(client)
   client << "Enter your name to continue: "
   name = client.gets
   player = Player.new(client)
+  ClientManager.add_player(player, client)
   player.name = name.as(String)
   player.room.contents << player
+  client << "type `commands` to get a list of commands\n"
   client << player.room.display_contents
   player.room.broadcast("#{player.name} has entered the room\n", player)
   spawn do
     loop do
-      response = parse(player, client)
-      client << response
+      begin
+        response = parse(player, client)
+        client << response
+      rescue ex : Exception
+        player.room.contents.delete(player)
+        ClientManager.clients.delete(client)
+        p ex.class
+        p ex.message
+        p ex.backtrace
+      end
     end
-  end
-end
-
-spawn do
-  loop do
-    ClientManager.clients = ClientManager.clients.reject do |client|
-      client.closed?
-    end
-    sleep 2
   end
 end
 
 loop do
   client = server.accept
   ClientManager.clients << client
-  login(client)
+  begin
+    login(client)
+    # rescue ex : Exception
+    #   ClientManager.remove(client)
+    #   p ex.message
+    #   p ex.class
+    #   p ex.backtrace
+
+
+  end
 end
