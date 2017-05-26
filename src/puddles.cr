@@ -1,14 +1,28 @@
 require "socket"
 require "colorize"
 
-class Lifeform
-  property :inventory
-  property :description
-  @name : String | Nil
-  @inventory : Array(Item) | Nil
-  @description : String | Nil
-  getter :name
-  
+class Thing
+  @inventory : Array(Item)
+  property :inventory, :name, :description
+
+    getter :name, :description
+  @name : String 
+  @description : String
+
+  def initialize(@name, @description)
+    @inventory = [] of Item
+  end
+end
+
+class ClientManagerClass
+  property :clients
+  @clients : Array(TCPSocket)
+  def initialize(@clients)
+  end
+end
+
+class Lifeform < Thing
+  getter :alive
   def attack(player)
     if @alive
       @alive = false
@@ -19,27 +33,23 @@ class Lifeform
   end
 
   def display_inventory
-    @inventory.as(Array(Item)).map{|i| i.name + "\n"}.join
+    @inventory.as(Array(Item)).map { |i| i.name + "\n" }.join
   end
 end
 
-class Item
-  getter :name, :description
-  @name : String
-  @description : String
+class Item < Thing
 
-  def initialize(@name, @description)
-  end
 
   def to_s
     "A #{@name} is lying on the ground here\n"
   end
+
+
 end
 
 class Monster < Lifeform
-  getter :name, :description
 
-  def initialize(@name, @description)
+  def initialize(@name, @description, @inventory = [] of Item)
     @alive = true
   end
 
@@ -56,8 +66,8 @@ Rooms = [
   Room.new(
     description: "You are in the starting room. Nothing much is here yet.\n",
     contents: [
-      Monster.new("bunny", "A fluffy bunny\n").as(Lifeform | Item),
-      Item.new("coin", "A shiny gold coin\n")
+      Monster.new("bunny", "A fluffy bunny\n", [Item.new("foot", "A lucky rabbit's foot\n")]),
+      Item.new("coin", "A shiny gold coin\n"),
     ]
   ),
 ]
@@ -96,14 +106,14 @@ end
 class Player < Lifeform
   @socket : TCPSocket
   @room : Room
-  @name : String | Nil
-  getter :room, :name, :socket
+  getter :room, :socket
 
   def initialize(@socket)
     @logged_in = :false
     @alive = true
     @inventory = [Item.new("card", "A magic playing card\n")]
-
+    @name = "placeholder"
+    @description = "placeholder"
     @room = Rooms.first
   end
 
@@ -113,13 +123,41 @@ class Player < Lifeform
     @room.contents << self
   end
 
+  def loot(thing_name)
+    thing = room.find(thing_name)
+    raise NotDeadYet.new if thing.is_a? Lifeform && thing.as(Lifeform).alive
+    inv = @inventory.as(Array(Item))
+    goods = thing.inventory.as(Array(Item))
+    raise InvalidLootTarget.new if goods.empty?
+    inv += goods
+    @inventory = inv
+    thing.inventory = [] of Item
+    goods_display = goods.map(&.name).join(",")
+    case thing
+    when  Lifeform
+      "You stole #{goods_display} from the defenseless corpse of #{thing.name}\n"
+    when  Item
+      "You stole #{goods_display} from #{thing.name}\n"
+    end
+
+  rescue NotDeadYet
+    "You have to kill them before you can loot their corpse!\n"
+  rescue ThingNotFound
+    "You can loot something that isn't here!\n"
+  rescue InvalidLootTarget
+    "#{thing.as(Thing).name} has nothing for you to loot\n"
+  end
+
   def to_s
     if @alive
       "A player named #{@name.colorize(:red)} is here minding their own business\n"
     else
-      "The corpse of a dead player #{@name} is rotting here\n"
+      "The corpse of a dead player named #{@name.colorize(:red)} is rotting here\n"
     end
   end
+end
+
+class InvalidLootTarget < Exception
 end
 
 class BadAuth < Exception
@@ -128,8 +166,14 @@ end
 class ThingNotFound < Exception
 end
 
+class NotDeadYet < Exception
+end
+
+class InvalidLootTarget < Exception
+end
+
 server = TCPServer.new("localhost", 1234)
-Clients = [] of TCPSocket
+ClientManager = ClientManagerClass.new([] of TCPSocket)
 
 def parse(player, client)
   case client.gets
@@ -161,12 +205,14 @@ def parse(player, client)
       "What? #{$1} doesn't even exist, man\n"
     end
   when /say (.*)/
-    Clients.each { |c| c << "#{player.name} says: #{$1}\n" }
+    ClientManager.clients.each { |c| c << "#{player.name} says: #{$1}\n" }
   when "i"
+    p "#{player} inv is #{player.inventory}"
     "Your pack contains: \n" +
-    player.display_inventory + 
-    "Use `get THING from pack` to remove item\n"
-
+      player.display_inventory +
+      "Use `get THING from pack` to remove item\n"
+  when /^loot (.*)/
+    player.loot($1)
   else
     "I'm not sure I understood that command\n"
   end
@@ -174,7 +220,13 @@ end
 
 def login(client)
   client << "Welcome to Puddles. A crystal language based MUD\n"
+  client << "Enter your name to continue: "
+  name = client.gets
   player = Player.new(client)
+  player.name = name.as(String)
+  player.room.contents << player
+  client << player.room.display_contents
+  player.room.broadcast("#{player.name} has entered the room\n", player)
   spawn do
     loop do
       response = parse(player, client)
@@ -183,8 +235,17 @@ def login(client)
   end
 end
 
+spawn do
+  loop do
+    ClientManager.clients = ClientManager.clients.reject do |client|
+      client.closed?
+    end
+    sleep 2
+  end
+end
+
 loop do
   client = server.accept
-  Clients << client
+  ClientManager.clients << client
   login(client)
 end
