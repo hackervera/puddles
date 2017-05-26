@@ -1,0 +1,13 @@
+name: puddles
+version: 0.1.0
+
+authors:
+  - Tyler Gillies <tjgillies@gmail.com>
+
+targets:
+  puddles:
+    main: src/puddles.cr
+
+crystal: 0.22.0
+
+license: MIT
